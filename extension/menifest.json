@@ -6,7 +6,7 @@
     "permissions":["activeTab"],
     "content_scripts":[{
         "matches":[ "https://*.tradingview.com/*"],
-        "js":["content.js"]
+        "js":["watcher.js"]
     }
     ],
     "host_permissions": [
