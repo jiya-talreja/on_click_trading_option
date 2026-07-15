@@ -1,7 +1,6 @@
 import json
 import redis
 from core.config import settings
-
 redis_client = redis.Redis(
     host=settings.redis_host,
     port=settings.redis_port,
@@ -23,9 +22,13 @@ def save_position(position: dict):
         key,position_json
     )
 def get_position(position_id):
+    key = f"ap:{position_id}"
+    position_json = redis_client.get(key)
+    if position_json is None:
+        return None
+    return json.loads(position_json)
+def update_position(position):
+    return save_position(position)
+def delete_position(position_id):
     key=f"ap:{position_id}"
-    position_json=redis_client.get(
-        key
-    )
-    position=json.loads(position_json)
-    return position
+    redis_client.delete(key)
