@@ -86,13 +86,39 @@ async def inputs(payloads : Tradeinput):
     except Exception as e:
         raise HTTPException(status_code=500,detail=str(e))
 
+
 @app.websocket("/trade-stream")
 async def trade_stream(websocket: WebSocket):
     await websocket.accept()
     print("Extension Connected")
+    stoploss_service=StopLossDync()
     try:
         while True:
             data = await websocket.receive_json()
             print("PRICE UPDATE :", data)
+            if(data["position_id"]):
+                updated_price=data["current_price"]
+                _position=get_position(data["position_id"])
+                _position["current_price"]= updated_price
+                tsl, extreme_price = stoploss_service.update_trailing_stop(
+                    action=_position["action"],
+                    current_price=updated_price,
+                    highest_price=_position["highest_price"],
+                    lowest_price=_position["lowest_price"],
+                    trailing_percent=1
+                )
+                if _position["action"] == "BUY":
+                    _position["highest_price"] = extreme_price
+                    _position["trailing_stop"] = max(_position["trailing_stop"],tsl)
+                else:
+                    _position["lowest_price"] = extreme_price
+                    _position["trailing_stop"] = min(_position["trailing_stop"],tsl)
+                print(_position)
+                update_position(_position)
+                if_exit=stoploss_service.exit_check(action=_position["action"],
+                current_price=_position["current_price"],
+                trailing_stop=_position["trailing_stop"])
+                if if_exit["exit"]:
+                    print(if_exit["reason"])#actual order to be updated
     except WebSocketDisconnect:
         print("Extension Disconnected")
