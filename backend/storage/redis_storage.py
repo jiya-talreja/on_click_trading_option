@@ -32,3 +32,11 @@ def update_position(position):
 def delete_position(position_id):
     key=f"ap:{position_id}"
     redis_client.delete(key)
+def get_all_position():
+    positions=[]
+    keys=redis_client.keys("ap:*")
+    for key in keys:
+        position_json = redis_client.get(key)
+        if position_json:
+            positions.append(json.loads(position_json))
+    return positions
