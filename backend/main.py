@@ -11,7 +11,9 @@ from services.stoploss import StopLossDync
 from services.validation import ValidationService
 from services.order_service import OrderService
 from services.position_service import PositionService
-from storage.redis_storage import save_position,get_position
+from storage.redis_storage import save_position,get_position,update_position,delete_position,get_all_position
+from services.time_exit import market_closed
+
 CAPITAL_PERCENTAGE = 90
 app=FastAPI(title="Tradingview-backend")
 app.add_middleware(
@@ -57,12 +59,7 @@ async def inputs(payloads : Tradeinput):
         quantity=quantity_service.calculate_quantity(avail_amount,price_current,CAPITAL_PERCENTAGE)
         print(quantity)
         trade_context["quantity"]=quantity
-
-        stoploss_service=StopLossDync()
-        print(stoploss_service.stoploss(action_side,price_current,1))
-        trade_context["stoploss"]=stoploss_service.stoploss(action_side,price_current,1)
-        trade_context["tsl"]=stoploss_service.initialtsl(action_side,price_current,1)
-
+        
         validate_service=ValidationService()
         if_true=validate_service.validate(trade_context)
         print(if_true)
@@ -85,7 +82,6 @@ async def inputs(payloads : Tradeinput):
         }
     except Exception as e:
         raise HTTPException(status_code=500,detail=str(e))
-
 
 @app.websocket("/trade-stream")
 async def trade_stream(websocket: WebSocket):
@@ -115,10 +111,23 @@ async def trade_stream(websocket: WebSocket):
                     _position["trailing_stop"] = min(_position["trailing_stop"],tsl)
                 print(_position)
                 update_position(_position)
-                if_exit=stoploss_service.exit_check(action=_position["action"],
+                if_exit=stoploss_service.exit_check_tsl(action=_position["action"],
                 current_price=_position["current_price"],
                 trailing_stop=_position["trailing_stop"])
                 if if_exit["exit"]:
-                    print(if_exit["reason"])#actual order to be updated
+                    print(if_exit["reason"])
+                    _position["status"] = "CLOSED"
+                    _position["exit_reason"] = if_exit["reason"]
+                    _position["exit_price"]=updated_price
+                    update_position(_position)
+                    break
     except WebSocketDisconnect:
         print("Extension Disconnected")
+async def time_market_closed():
+    while True:
+        if market_closed():
+            positions_list=get_all_position()
+            for position in positions_list:
+                print("checking time",position["stock"])
+            break
+        await asyncio.sleep(60) 
