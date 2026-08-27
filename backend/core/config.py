@@ -1,8 +1,11 @@
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings
+from dhanhq import DhanLogin
+import pyotp
 class Settings(BaseSettings):
     client_key: str
-    token_access: str
+    access_token:str
+    upstox_access_token:str
     redis_host:str
     redis_port:int
     redis_db:int
