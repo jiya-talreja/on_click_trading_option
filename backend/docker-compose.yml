@@ -1,0 +1,18 @@
+services:
+  backend:
+    build: .
+    container_name: trading-backend
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: trading-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
