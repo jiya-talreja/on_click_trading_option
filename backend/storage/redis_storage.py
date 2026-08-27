@@ -40,3 +40,9 @@ def get_all_position():
         if position_json:
             positions.append(json.loads(position_json))
     return positions
+def get_position_by_instrument(instrument):
+    positions=get_all_position()
+    for p in positions:
+        if p["instrument"] and p["status"]=="ACTIVE":
+            return p
+    return None
