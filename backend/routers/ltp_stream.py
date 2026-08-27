@@ -1,28 +1,48 @@
 import upstox_client
 from upstox_client.feeder import MarketDataStreamerV3
-
-import json
+from fastapi import HTTPException
+from datetime import datetime,timedelta
 import time
 print(upstox_client)
 print(MarketDataStreamerV3)
 print(dir(MarketDataStreamerV3))
 from services.stoploss import StopLossDync
 stoploss_service=StopLossDync()
+from services.dhan_broker_service import OrderService
+order_service=OrderService()
 import asyncio
+from core.config import settings
+access_token=settings.upstox_access_token
 from services.connection_manager import manager
 from storage.redis_storage import save_position,get_position,update_position,delete_position,get_all_position,get_position_by_instrument
 streamer = None
 subscribed = set()
+configuration = upstox_client.Configuration()
+configuration.access_token = access_token
+api_client = upstox_client.ApiClient(configuration)
 
+def execute_atr(intrument_key):
+    api_instance = upstox_client.HistoryV3Api(api_client=api_client)
+    try:
+        print("Getting the candles info")
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        past_str = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
+        response = api_instance.get_historical_candle_data1(instrument_key=intrument_key,unit="minutes",interval="5",to_date=today_str,from_date=past_str)
+        print("candle response : ")
+        if(response.status=="success"):
+            raw_candles = response.data.candles
+            print("raw candles")
+        entry_atr = stoploss_service.calculate_atr_from_candles(raw_candles)
+        print("ATR RETURN")
+        return entry_atr
+    except Exception as e:
+        print(f"❌ Error during Upstox API Candle fetch: {str(e)}")
+        return None
 
-access_token = "eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI2M0NRTTUiLCJqdGkiOiI2YTZhZmU1MWY4MzIyMzdkNDA5MmJkZjkiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc4NTM5NjgxNywiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzg1NDQ4ODAwfQ.pvGPio4Y8DiGpTQ9Kksl6nR0x0alSP6YRvCcHwBBm_0"
 def start_websocket():
     global streamer
     global event_loop
     event_loop=asyncio.get_running_loop()
-    configuration = upstox_client.Configuration()
-    configuration.access_token = access_token
-    api_client = upstox_client.ApiClient(configuration)
     streamer = MarketDataStreamerV3(api_client=api_client)
     streamer.on("open", on_connect_message)
     streamer.on("message", message_info)
@@ -100,7 +120,7 @@ def update_tsl_logic(instrument, ltp):
     current_price=ltp,
     highest_price=_position["highest_price"],
     lowest_price=_position["lowest_price"],
-    trailing_percent=1
+    atr_component=_position["atr_component"]
     )
     if _position["action"] == "BUY":
         _position["highest_price"] = extreme_price
@@ -115,9 +135,36 @@ def update_tsl_logic(instrument, ltp):
     trailing_stop=_position["trailing_stop"])
     if if_exit["exit"]:
         print(if_exit["reason"])
-        _position["status"] = "CLOSED"
         _position["exit_reason"] = if_exit["reason"]
         _position["exit_price"]=ltp
+        print("\n========== TSL EXIT ==========")
+        print("Stock       :", _position["stock"])
+        print("Current Side:", _position["action"])
+        print("Quantity    :", _position["quantity"])
+        exit_context = {
+            "stock": _position["stock"],
+            "stock_id": _position["stock_id"],
+            "quantity": _position["quantity"],
+            "action": "SELL" if _position["action"] == "BUY" else "BUY"
+        }
+        print("\nExit Context")
+        print(exit_context)
+        exit_response = order_service.place_order(exit_context)
+        print("\nBroker Exit Response")
+        print(exit_response)
+        if exit_response["order_status"] != "FILLED":
+            print("\nExit order NOT executed.")
+            print(exit_response)    
+            return{
+                "type": "CANT EXIT",
+                "position": _position
+            }
+        print("\nExit order successfully filled.")
+        _position["status"] = "CLOSED"
+        _position["exit_reason"] = "TSL"
+        _position["exit_order_id"] = exit_response["order_id"]
+        _position["exit_price"] = exit_response["filled_price"]
+        _position["exit_time"] = exit_response["order_time"]
         update_position(_position)
         unsubscribe_stock(_position["instrument"])
         return {
