@@ -4,15 +4,16 @@ class PositionService:
     def create_position(self, trade_context):
         stoploss_service = StopLossDync()
         entry_price = trade_context["filled_price"]
+        atr_component=trade_context["atr_component"]
         stop_loss = stoploss_service.stoploss(
             trade_context["action"],
             entry_price,
-            1
+            atr_component
         )
         trailing_stop = stoploss_service.initialtsl(
             trade_context["action"],
             entry_price,
-            1
+            atr_component
         )
         position_id = str(uuid.uuid4())[:8]
         position = {
@@ -22,6 +23,8 @@ class PositionService:
             "stock_id": trade_context["stock_id"],
             "action": trade_context["action"],
             "quantity": trade_context["quantity"],
+            "instrument":trade_context["instrument"],
+            "atr_component":trade_context["atr_component"],
             "entry_price": entry_price,
             "current_price": entry_price,
             "highest_price": entry_price,
