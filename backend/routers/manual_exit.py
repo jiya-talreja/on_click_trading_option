@@ -2,8 +2,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 from services.connection_manager import manager
-from storage.redis_storage import get_position, delete_position, get_all_position 
-
+from storage.redis_storage import get_position, delete_position, get_all_position,update_position
+from services.dhan_broker_service import OrderService
+order_service=OrderService()
 router = APIRouter()
 class ManualExitRequest(BaseModel):
     position_id: str
@@ -26,12 +27,37 @@ async def execute_manual_clearance(payload: ManualExitRequest):
             "message": "Position already cleared from system registers",
             "active_positions": remaining_items
         }  
-    print(f"Executing Dhan market liquidation order for ID: {received_id}")
+    print("\n========== MANUAL EXIT ==========")
+    print("Position ID :", received_id)
+    print("Stock       :", position["stock"])
+    print("Current Side:", position["action"])
+    print("Quantity    :", position["quantity"])
+    exit_context = {
+        "stock": position["stock"],
+        "stock_id": position["stock_id"],
+        "quantity": position["quantity"],
+        "action": "SELL" if position["action"] == "BUY" else "BUY"
+    }
+    print("\nExit Context")
+    print(exit_context)
+    exit_response = order_service.place_order(exit_context)
+    print("\nBroker Exit Response")
+    print(exit_response)
+    if exit_response["order_status"] != "FILLED":
+        print("\nExit order NOT executed.")
+        print(exit_response)    
+        raise HTTPException(
+            status_code=500,
+            detail="Broker failed to exit position."
+        )
+    print("\nExit order successfully filled.")
     position["status"] = "CLOSED"
     position["exit_reason"] = "MANUAL_EXIT"
-    position["exit_price"] = position.get("current_price", position.get("filled_price"))
-    position["exit_time"] = datetime.now().isoformat()
-    exit_action = "SELL" if position["action"] == "BUY" else "BUY"
+    position["exit_order_id"] = exit_response["order_id"]
+    position["exit_price"] = exit_response["filled_price"]
+    position["exit_time"] = exit_response["order_time"]
+    update_position(position)
+    print("DELTING POSITION")
     delete_position(position["position_id"])
     remaining_items = get_all_position()
     print("REMAINING ITEMS OF ME : ",remaining_items)
@@ -44,6 +70,6 @@ async def execute_manual_clearance(payload: ManualExitRequest):
     print("DONE ME")
     return {
         "status": "success",
-        "message": f"Successfully liquidated position via {exit_action} order execution",
+        "message": "Successfully liquidated position via  order execution",
         "active_positions": remaining_items
     }
