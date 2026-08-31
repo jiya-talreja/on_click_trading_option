@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+dhanhq
+pandas
+pyotp
+upstox-python-sdk
+requests
+redis
