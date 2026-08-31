@@ -1,6 +1,5 @@
-# one_click_trading_option
-Implimenting one click trading option for the platform Trading view via Dhan broker 
-# One-Click Trading Extension for TradingView
+
+# One-Click Trading Extension for Chart Analysing Platforms 
 
 A browser extension and Python backend that enables one-click trading directly from a TradingView chart.
 
